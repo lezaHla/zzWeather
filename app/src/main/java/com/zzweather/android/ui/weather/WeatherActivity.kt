@@ -38,78 +38,94 @@ class WeatherActivity : AppCompatActivity() {
         val decorView = window.decorView
         decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
         window.statusBarColor = Color.TRANSPARENT
-        ///改变的写法
         id = ActivityWeatherBinding.inflate(layoutInflater)
-//        now = NowBinding.bind(id.root)
-//        fore = ForecastBinding.bind(id.root)
-//        life = LifeIndexBinding.bind(id.root)
-        now = NowBinding.inflate(layoutInflater)
-        fore = ForecastBinding.inflate(layoutInflater)
-        life = LifeIndexBinding.inflate(layoutInflater)
+        now = NowBinding.bind(id.root)
+        fore = ForecastBinding.bind(id.root)
+        life = LifeIndexBinding.bind(id.root)
         setContentView(id.root)
-        if(viewModel.locationLng.isEmpty()){
+        // 调用DrawerLayout的openDrawer()方法来打开滑动菜单
+        now.navBtn.setOnClickListener {
+            id.drawerLayout.openDrawer(GravityCompat.START)
+        }
+        // 监听状态
+        id.drawerLayout.addDrawerListener(object : DrawerLayout.DrawerListener {
+            override fun onDrawerStateChanged(newState: Int) {}
+
+            override fun onDrawerSlide(drawerView: View, slideOffset: Float) {}
+
+            override fun onDrawerOpened(drawerView: View) {}
+
+            override fun onDrawerClosed(drawerView: View) {
+                // 当滑动菜单被隐藏的时候, 同时也要隐藏输入法
+                val manager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                manager.hideSoftInputFromWindow(drawerView.windowToken, InputMethodManager.HIDE_NOT_ALWAYS)
+            }
+        })
+        // 从intent中取出经纬度坐标和地区名称, 并赋值到WeatherViewModel的相应变量中
+        if (viewModel.locationLng.isEmpty()) {
             viewModel.locationLng = intent.getStringExtra("location_lng") ?: ""
         }
-        if(viewModel.locationLat.isEmpty()){
+        if (viewModel.locationLat.isEmpty()) {
             viewModel.locationLat = intent.getStringExtra("location_lat") ?: ""
         }
-        if(viewModel.placeName.isEmpty()){
+        if (viewModel.placeName.isEmpty()) {
             viewModel.placeName = intent.getStringExtra("place_name") ?: ""
         }
+        // 对weatherLiveData对象进行观察
         viewModel.weatherLiveData.observe(this, Observer { result ->
             val weather = result.getOrNull()
-            if(weather != null){
+            if (weather != null) {
+                showWeatherInfo(weather) // 当获取到服务器返回的天气数据时, 调用showWeatherInfo()方法解析展示
+            } else {
+                Toast.makeText(this, "无法成功获取天气信息", Toast.LENGTH_SHORT).show()
+                result.exceptionOrNull()?.printStackTrace()
+            }
+        })
+        refreshWeather()
+        viewModel.weatherLiveData.observe(this, Observer { result ->
+            val weather = result.getOrNull()
+            if (weather != null) {
                 showWeatherInfo(weather)
-                showWeatherInfo(weather)
-            }else{
-                Toast.makeText(this,"无法成功获取天气信息",Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "无法成功获取天气信息", Toast.LENGTH_SHORT).show()
                 result.exceptionOrNull()?.printStackTrace()
             }
             id.swipeRefresh.isRefreshing = false
         })
-        id.swipeRefresh.setColorSchemeResources(R.color.colorPrimary)
         refreshWeather()
+        // 给下拉刷新设置监听器
         id.swipeRefresh.setOnRefreshListener {
             refreshWeather()
         }
-        now.navBtn.setOnClickListener {
-            id.drawerLayout.openDrawer(GravityCompat.START)
-        }
-        id.drawerLayout.addDrawerListener(object : DrawerLayout.DrawerListener{
-            override fun onDrawerStateChanged(newState: Int) {}
-            override fun onDrawerSlide(drawerView: View, slideOffset: Float) {}
-            override fun onDrawerOpened(drawerView: View) {}
-            override fun onDrawerClosed(drawerView: View) {
-                val manager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                manager.hideSoftInputFromWindow(drawerView.windowToken,InputMethodManager.HIDE_NOT_ALWAYS)
-            }
-        })
     }
 
-    fun refreshWeather(){
-        viewModel.refreshWeather(viewModel.locationLng,viewModel.locationLat)
+    fun refreshWeather() {
+        // 下拉刷新
+        viewModel.refreshWeather(viewModel.locationLng, viewModel.locationLat)
         id.swipeRefresh.isRefreshing = true
     }
 
+    // 从Weather对象中获取数据
     private fun showWeatherInfo(weather: Weather) {
         now.placeName.text = viewModel.placeName
         val realtime = weather.realtime
         val daily = weather.daily
-        //填充now.xml布局中的数据
+        // 填充now.xml布局中的数据
         val currentTempText = "${realtime.temperature.toInt()} ℃"
         now.currentTemp.text = currentTempText
         now.currentSky.text = getSky(realtime.skycon).info
         val currentPM25Text = "空气指数 ${realtime.airQuality.aqi.chn.toInt()}"
         now.currentAQI.text = currentPM25Text
         now.nowLayout.setBackgroundResource(getSky(realtime.skycon).bg)
-        //填充forecast.xml布局中的数据
+        // 填充forecast.xml布局中的数据
         fore.forecastLayout.removeAllViews()
         val days = daily.skycon.size
-        for(i in 0 until days){
+        // 使用for-in循环来处理未来几天每天的天气信息
+        for (i in 0 until days) {
             val skycon = daily.skycon[i]
             val temperature = daily.temperature[i]
-            val view = LayoutInflater.from(this).inflate(R.layout.forecast_item,
-                fore.forecastLayout, false)
+            // 动态加载forecast_item.xml布局
+            val view = LayoutInflater.from(this).inflate(R.layout.forecast_item, fore.forecastLayout, false)
             val dateInfo = view.findViewById(R.id.dateInfo) as TextView
             val skyIcon = view.findViewById(R.id.skyIcon) as ImageView
             val skyInfo = view.findViewById(R.id.skyInfo) as TextView
@@ -123,12 +139,13 @@ class WeatherActivity : AppCompatActivity() {
             temperatureInfo.text = tempText
             fore.forecastLayout.addView(view)
         }
-        //填充life_index布局中的数据
+        // 填充life_index.xml布局中的数据
         val lifeIndex = daily.lifeIndex
+        // 因为界面只需要当天的数据, 所以对所有生活指数都取下标为零的元素的数据
         life.coldRiskText.text = lifeIndex.coldRisk[0].desc
         life.dressingText.text = lifeIndex.dressing[0].desc
         life.ultravioletText.text = lifeIndex.ultraviolet[0].desc
         life.carWashingText.text = lifeIndex.carWashing[0].desc
-        id.weatherLayout.visibility = View.VISIBLE
+        id.weatherLayout.visibility = View.VISIBLE // 让ScrollView设置为可见状态
     }
 }
