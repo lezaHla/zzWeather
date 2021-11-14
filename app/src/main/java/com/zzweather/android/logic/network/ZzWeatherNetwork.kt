@@ -22,6 +22,7 @@ object ZzWeatherNetwork {
     suspend fun getRealtimeWeather(lng: String, lat: String) =
         weatherService.getRealtimeWeather(lng,lat).await()
 
+    //将await()函数定义成Call<T>的扩展函数，这样所有返回值是Call类型的Retrofit网络请求接口可以直接调用await()函数了
     private suspend fun <T> Call<T>.await(): T {
         return suspendCoroutine { continuation ->
             enqueue(object : Callback<T> {
